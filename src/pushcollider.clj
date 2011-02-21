@@ -41,18 +41,18 @@
 (define-registered in 
   (fn [state] (push-item (stack-ref :auxiliary 0 state) :integer state)))
 
-(def pushcollider-atom-generators (list (fn [] (rand-int 10))
-                                    'in
-                                    'integer_div
-                                    'integer_mult
-                                    'integer_add
-                                    'integer_sub))
+;(def pushcollider-atom-generators (list (fn [] (rand-int 10))
+;                                    'in
+;                                    'integer_div
+;                                    'integer_mult
+;                                    'integer_add
+;                                    'integer_sub))
 
 (defn new-individual
   "Returns a new, evaluated individual. In this simple example a
 a genome is a sequence of 20 random zeros or ones."
   []
-  (let [genome (random-code 50 pushcollider-atom-generators)]
+  (let [genome (random-code 50 :atom-generators)]
     (individual. genome (evaluate genome))))
 
 (defn mutate
@@ -61,7 +61,7 @@ a genome is a sequence of 20 random zeros or ones."
   (let [old-genome (:genome i)
         new-genome (insert-code-at-point old-genome 
                      (select-node-index old-genome)
-                     (random-code 20 pushcollider-atom-generators))]
+                     (random-code 20 :atom-generators))]
     (if (> (count-points new-genome) 50)
       i
       (individual. new-genome (evaluate new-genome)))))
