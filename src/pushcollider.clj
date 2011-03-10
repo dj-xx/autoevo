@@ -1,19 +1,11 @@
-;; pushcollider.clj
-;; Lee Spector (lspector@hampshire.edu), 20110217
-;;
-;; Collider code adapted to evolve push programs.
-;; A quick hack of collider + clojush/examples/simple-regression.clj
-;; Load from a directory containing clojush.clj, or with that on the classpath.
-;; Run after loading with something like: (evolve 100 100)
-;; Doesn't autosimplify, and lacks many other niceties of PushGP.
-
-(ns pushcollider 
+(ns pushcollider
   (:require [clojush :exclude (mutate crossover report)] [clojure.contrib.math])
   (:use [clojush :exclude (mutate crossover report)] [clojure.contrib.math]))
 
 (def succeeded (atom false)) ;; global flag to indicate success
 
-(defrecord individual [genome error]) ;; data structure for individuals
+(defrecord individual [genome error totalerror ancestor]) ;; data structure for individuals
+
 
 (defn report-success
   "Sets the global success flag and also prints a success message."
@@ -41,30 +33,65 @@
 (define-registered in 
   (fn [state] (push-item (stack-ref :auxiliary 0 state) :integer state)))
 
-;(def pushcollider-atom-generators (list (fn [] (rand-int 10))
-;                                    'in
-;                                    'integer_div
-;                                    'integer_mult
-;                                    'integer_add
-;                                    'integer_sub))
+(def pushcollider-atom-generators (list (fn [] (rand-int 10))
+                                    'in
+                                    'integer_div
+                                    'integer_mult
+                                    'integer_add
+                                    'integer_sub))
 
 (defn new-individual
   "Returns a new, evaluated individual. In this simple example a
 a genome is a sequence of 20 random zeros or ones."
-  []
-  (let [genome (random-code 50 :atom-generators)]
-    (individual. genome (evaluate genome))))
+  [& {:keys [genome error totalerror ancestor]
+                          :or {genome (random-code 50 pushcollider-atom-generators)
+                               error nil
+                               totalerror nil
+                               ancestor nil}}]
+  (individual. genome error totalerror ancestor))
 
+(comment
 (defn mutate
   "Returns an evaluated individual resulting from the mutation of i."
   [i]
   (let [old-genome (:genome i)
         new-genome (insert-code-at-point old-genome 
                      (select-node-index old-genome)
-                     (random-code 20 :atom-generators))]
+                     (random-code 20 pushcollider-atom-generators))]
     (if (> (count-points new-genome) 50)
       i
-      (individual. new-genome (evaluate new-genome)))))
+      (individual. new-genome (evaluate new-genome) (:error individual) ()))))
+)
+;;(comment
+  
+(defn autoconstruct
+  [pgm]
+  (top-item :code (run-push pgm (push-item 0 :auxiliary (make-push-state)))))
+
+
+(defn mutate
+  "Returns an evaluated individual resulting from the autoconstructive mutation of i."
+  [i]
+  (let [old-genome (:genome i)
+        descendant (autoconstruct (:genome i))
+        sibling (autoconstruct (:genome i))
+        error (evaluate (:genome descendant))
+        ancestors (get i :ancestor ())
+        new-genome (insert-code-at-point old-genome 
+                     (select-node-index old-genome)
+                     (random-code 20 pushcollider-atom-generators))]
+        ;;max-age 2]    
+    (if (or ;;(= (:age i) max-age)
+          (= descendant sibling)
+          (>= error 2000)
+          (> (count-points descendant) 50))
+      (i)
+      (new-individual
+        :genome (:genome descendant)
+        :error error
+        :totalerror (+ error (:totalerror i))
+        :ancestor (cons (:genome i) ancestors)))))
+;;)
        
 
 (defn crossover
@@ -77,7 +104,11 @@ of i1 and i2."
                        (select-node-index (:genome i2))))]
     (if (> (count-points new-genome) 50)
       i1
-      (individual. new-genome (evaluate new-genome)))))
+      (new-individual
+        :genome new-genome 
+        :error (evaluate new-genome)
+        :totalerror (evaluate new-genome)
+        :ancestor (cons (:genome i1) (:genome i2))))))
 
 (defn constructive-collision 
   "Takes a pair of individuals and returns a vector of individuals."
@@ -130,23 +161,4 @@ the population."
                          base-pop-size))]
         (recur (inc generation) next-gen)))))
       
- (pushgp 
-  :error-function (fn [program]
-                    (doall
-                      (for [input (range 10)]
-                        (let [state (run-push program 
-                                   (push-item input :auxiliary 
-                                     (push-item input :integer 
-                                       (make-push-state))))
-                           top-int (top-item :integer state)]
-                          (if (number? top-int)
-                         (abs (- top-int 
-                                (- (* input input input) 
-                                  (* 2 input input) input)))
-                         1000)))))
-  :atom-generators (list (fn [] (rand-int 10))
-                                    'in
-                                    'integer_div
-                                    'integer_mult
-                                    'integer_add
-                                    'integer_sub)) 
+  
