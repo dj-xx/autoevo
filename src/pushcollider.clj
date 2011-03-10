@@ -60,9 +60,10 @@ a genome is a sequence of 20 random zeros or ones."
                      (random-code 20 pushcollider-atom-generators))]
     (if (> (count-points new-genome) 50)
       i
-      (individual. new-genome (evaluate new-genome) (:error individual) ()))))
+      (individual. new-genome (evaluate new-genome) nil nil))))
 )
-;;(comment
+
+
   
 (defn autoconstruct
   [pgm]
@@ -73,25 +74,32 @@ a genome is a sequence of 20 random zeros or ones."
   "Returns an evaluated individual resulting from the autoconstructive mutation of i."
   [i]
   (let [old-genome (:genome i)
+        random (random-code 50 pushcollider-atom-generators)
         descendant (autoconstruct (:genome i))
         sibling (autoconstruct (:genome i))
-        error (evaluate (:genome descendant))
-        ancestors (get i :ancestor ())
-        new-genome (insert-code-at-point old-genome 
+        child-error (evaluate descendant)
+        failed (or 
+                 (= descendant :no-stack-item)
+                 (= descendant sibling)
+                 (>= child-error 2000)
+                 (> (count-points descendant) 50))
+        old-mutate (insert-code-at-point old-genome 
                      (select-node-index old-genome)
-                     (random-code 20 pushcollider-atom-generators))]
-        ;;max-age 2]    
-    (if (or ;;(= (:age i) max-age)
-          (= descendant sibling)
-          (>= error 2000)
-          (> (count-points descendant) 50))
-      (i)
+                     (random-code 20 pushcollider-atom-generators))]  
       (new-individual
-        :genome (:genome descendant)
-        :error error
-        :totalerror (+ error (:totalerror i))
-        :ancestor (cons (:genome i) ancestors)))))
-;;)
+        :genome (if failed
+                  random
+                  descendant)
+        :error (if failed
+                (evaluate random)
+                child-error)
+        :totalerror (if failed
+                       nil
+                       (+ child-error (:totalerror i)))
+        :ancestor (if failed
+                       ()
+                       (cons old-genome (get i :ancestor ()))))))
+
        
 
 (defn crossover
