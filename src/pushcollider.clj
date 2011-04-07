@@ -51,8 +51,6 @@
   (individual. genome (evaluate genome) totalerror ancestor))
 
 
-
-
 (defn pmutate
   "Returns an evaluated individual resulting from the point mutation of i."
   [i]
