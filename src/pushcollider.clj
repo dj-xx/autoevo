@@ -40,19 +40,21 @@
                                     'integer_add
                                     'integer_sub))
 
-(defn new-individual
-  "Returns a new, evaluated individual. In this simple example a
-a genome is a sequence of 20 random zeros or ones."
-  [& {:keys [genome error totalerror ancestor]
-                          :or {genome (random-code 50 pushcollider-atom-generators)
-                               error nil
-                               totalerror nil
-                               ancestor nil}}]
-  (individual. genome error totalerror ancestor))
 
-(comment
-(defn mutate
-  "Returns an evaluated individual resulting from the mutation of i."
+(defn new-individual
+  "Returns a new, evaluated individual. "
+  [& {:keys [genome error totalerror ancestor]
+      :or {genome (random-code 50 pushcollider-atom-generators)
+           error 0
+           totalerror 0
+           ancestor ()}}]
+  (individual. genome (evaluate genome) totalerror ancestor))
+
+
+
+
+(defn pmutate
+  "Returns an evaluated individual resulting from the point mutation of i."
   [i]
   (let [old-genome (:genome i)
         new-genome (insert-code-at-point old-genome 
@@ -60,46 +62,42 @@ a genome is a sequence of 20 random zeros or ones."
                      (random-code 20 pushcollider-atom-generators))]
     (if (> (count-points new-genome) 50)
       i
-      (individual. new-genome (evaluate new-genome) nil nil))))
-)
+      (individual. new-genome (evaluate new-genome) 0 0))))
+
 
 
   
 (defn autoconstruct
   [pgm]
-  (top-item :code (run-push pgm (push-item 0 :auxiliary (make-push-state)))))
+  (top-item :code 
+    (run-push pgm 
+      (push-item 0 :auxiliary 
+        (push-item pgm :code
+          (make-push-state))))))
+
 
 
 (defn mutate
   "Returns an evaluated individual resulting from the autoconstructive mutation of i."
   [i]
   (let [old-genome (:genome i)
-        random (random-code 50 pushcollider-atom-generators)
+        randomx (random-code 50 pushcollider-atom-generators)
         descendant (autoconstruct (:genome i))
         sibling (autoconstruct (:genome i))
         child-error (evaluate descendant)
-        failed (or 
-                 (= descendant :no-stack-item)
+        failed (or (= descendant :no-stack-item)
                  (= descendant sibling)
-                 (>= child-error 2000)
-                 (> (count-points descendant) 50))
-        old-mutate (insert-code-at-point old-genome 
-                     (select-node-index old-genome)
-                     (random-code 20 pushcollider-atom-generators))]  
+                 (= descendant old-genome)
+                 (>= child-error 20000000)
+                 (> (count-points descendant) 50)
+                 )]
+    (if failed
+      (new-individual :genome randomx :error (evaluate randomx) :totalerror 0 :ancestor ())  
       (new-individual
-        :genome (if failed
-                  random
-                  descendant)
-        :error (if failed
-                (evaluate random)
-                child-error)
-        :totalerror (if failed
-                       nil
-                       (+ child-error (:totalerror i)))
-        :ancestor (if failed
-                       ()
-                       (cons old-genome (get i :ancestor ()))))))
-
+        :genome descendant
+        :error child-error
+        :totalerror (+ child-error (get i :totalerror ()))
+        :ancestor (cons old-genome (get i :ancestor ()))))))
        
 
 (defn crossover
@@ -115,8 +113,8 @@ of i1 and i2."
       (new-individual
         :genome new-genome 
         :error (evaluate new-genome)
-        :totalerror (evaluate new-genome)
-        :ancestor (cons (:genome i1) (:genome i2))))))
+        :totalerror 0 ;(evaluate new-genome)
+        :ancestor 0))));;(cons (:genome i1) (:genome i2))))))
 
 (defn constructive-collision 
   "Takes a pair of individuals and returns a vector of individuals."
