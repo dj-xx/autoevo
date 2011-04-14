@@ -180,8 +180,11 @@ and returns a vector of all of the resulting individuals."
   "Report on the given population at the given generation and return
 the population."
   [generation population]
+  (let [best (reduce (fn [i1 i2] (if (< (:error i1) (:error i2)) i1 i2))
+                 population)]
   (println "Generation: " generation 
-    ", lowest error: " (apply min (map :error population)))
+    ", lowest error: " (apply min (map :error population))
+    ", Best Program: " (:genome best)))
   population)
 
 (defn evolve
