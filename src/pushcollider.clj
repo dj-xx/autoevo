@@ -41,6 +41,11 @@
                                     'integer_sub))
 
 
+;List of mutation operators. Add any new mutation operators to this list
+(def mutation-operators (list   'mutate
+                                'crossover
+                                'autopmutate))
+
 (defn new-individual
   "Returns a new, evaluated individual. "
   [& {:keys [genome error totalerror ancestor]
@@ -50,18 +55,23 @@
            ancestor ()}}]
   (individual. genome (evaluate genome) totalerror ancestor))
 
-
+(comment
 (defn pmutate
   "Returns an evaluated individual resulting from the point mutation of i."
   [i]
-  (let [old-genome (:genome i)
+  (let [old-genome (:genome i)        
         new-genome (insert-code-at-point old-genome 
                      (select-node-index old-genome)
                      (random-code 20 pushcollider-atom-generators))]
     (if (> (count-points new-genome) 50)
-      i
-      (individual. new-genome (evaluate new-genome) 0 0))))
-
+      (new-individual
+        :genome old-genome
+        :ancestor (:ancestor i))
+      (new-individual
+        :genome new-genome
+        :ancestor (cons old-genome (get i :ancestor ()))))))
+      ;;(individual. new-genome (evaluate new-genome) 0 0))))
+)
 
 
   
@@ -114,10 +124,33 @@ of i1 and i2."
         :totalerror 0 ;(evaluate new-genome)
         :ancestor 0))));;(cons (:genome i1) (:genome i2))))))
 
+
+(defn autopmutate
+  "Returns an evaluated individual resulting from the autoconstructive point mutation of i."
+  [i]
+  (let [old-genome (:genome i)
+        place (select-node-index old-genome)
+        stree (code-at-point old-genome place)
+        descendant (autoconstruct stree)
+        failed (or (= descendant :no-stack-item)
+                 (= descendant stree)
+                 (>= (evaluate descendant) (evaluate stree))
+                 )]          
+    (if failed
+      i
+      (new-individual
+        :genome (insert-code-at-point old-genome place descendant)
+        ;:totalerror (+ child-error (get i :totalerror ()))
+        :ancestor (cons old-genome (get i :ancestor ()))))))
+
+
 (defn constructive-collision 
   "Takes a pair of individuals and returns a vector of individuals."
   [[i1 i2]]
-  (vector i1 i2 (mutate i1) (mutate i2) (crossover i1 i2) (crossover i2 i1)))
+  (vector i1 i2 
+    (mutate i1) (mutate i2) 
+    (crossover i1 i2) (crossover i2 i1) 
+    (autopmutate i1) (autopmutate i2)))
 
 (defn constructive-collisions
   "Splits the population into pairs, collides the pairs constructively
