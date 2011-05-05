@@ -116,14 +116,14 @@ itself already on the stack"
 
 (defn babymaker
 "Making babies"
-[state i1 i2]
+[state [i1 i2]]
 (let [x (atom 0)]
-(push-item (top-item :integer (run-push (:genome i1) (push-item 0 :auxiliary (push-item (:genome i1) :code (state))))) :hay state)
-(push-item (top-item :integer (run-push (:genome i2) (push-item 0 :auxiliary (push-item (:genome i2) :code (state))))) :hay state)
+(push-item (top-item :integer (run-push (:genome i1) (push-item 0 :auxiliary (push-item (:genome i1) :code state)))) :hay state)
+(push-item (top-item :integer (run-push (:genome i2) (push-item 0 :auxiliary (push-item (:genome i2) :code state)))) :hay state)
 
 
 (while (< @x (* (count mutation-operators) 2))
-                        ((push-item (top-item :integer 
+                        (push-item (top-item :integer 
                           (run-push (:genome 
                                       (call 
                                         (symbol (str (nth mutation-operators @x)))
@@ -137,7 +137,7 @@ itself already on the stack"
                             (push-item @x :auxiliary
                               (push-item (:genome  
                                            (call 
-                                             (symbol (str (nth mutation-operators x)))
+                                             (symbol (str (nth mutation-operators @x)))
                                              (if (= (count (first (:arglists (meta (resolve (symbol (str (nth mutation-operators @x)))))))) 1)
                                                (if (= (mod @x 2) 0)
                                                  i1
@@ -145,15 +145,14 @@ itself already on the stack"
                                                (if (= (mod @x 2) 0)
                                                  (i1 i2)
                                                  (i2 i1))))) 
-                                (:code (state))))))) :hay state))
+                                (:code (state))))))) :hay state)
 (if (= (top-item :hay state) :no-stack-item)
-  ((pop-item :hay state)
-    (push-item @x :hay state)))
+  ((pop-item :hay state) (push-item @x :hay state)))
 (swap! x inc))
 (if (= (mod (count (:hay state)) 2) 1)
   (push-item @x :hay state))
   
-(vector (:hay state))))
+(concat (:hay state))))
 
 (defn mutate
   "Returns an evaluated individual resulting from the autoconstructive mutation of i."
@@ -316,8 +315,8 @@ two different trees"
   "Takes a pair of individuals and returns a vector of individuals."
   [[i1 i2]]
   (let [state (make-push-state)
-        probability (babymaker state i1 i2)
-        probs (map (fn [x] ()) (:hay state)) 
+        probability (babymaker state [[i1 i2]])
+        probs (map (fn [x] x) (:hay state))
         x (atom 0)
         y (atom 0)]
 (assoc state :hay '())
@@ -326,8 +325,8 @@ two different trees"
 
 
 (while (< @x (* (count mutation-operators) 2)) 
-(while (<= @y (nth probs x))
-                        ((push-item (top-item :code
+(while (<= @y (nth probs @x))
+                        (push-item (top-item :code
                           (run-push (:genome 
                                       (call 
                                         (symbol (str (nth mutation-operators @x)))
@@ -341,7 +340,7 @@ two different trees"
                             (push-item @y :auxiliary
                               (push-item (:genome  
                                            (call 
-                                             (symbol (str (nth mutation-operators x)))
+                                             (symbol (str (nth mutation-operators @x)))
                                              (if (= (count (first (:arglists (meta (resolve (symbol (str (nth mutation-operators @x)))))))) 1)
                                                (if (= (mod @y 2) 0)
                                                  i1
@@ -349,7 +348,7 @@ two different trees"
                                                (if (= (mod @y 2) 0)
                                                  (i1 i2)
                                                  (i2 i1))))) 
-                                (:code (state))))))) :hay state))
+                                (:code (state))))))) :hay state)
 (swap! y inc))
 (swap! x inc))
  
@@ -376,7 +375,7 @@ individuals."
 
 (defn destructive-collision
   "Takes a pair of individuals and returns a single individual."
-  [i1 i2]
+  [[i1 i2]]
   (if (< (:error i1) (:error i2)) i1 i2))
 
 (defn destructive-collisions
