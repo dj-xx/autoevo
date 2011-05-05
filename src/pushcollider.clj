@@ -1,10 +1,14 @@
 (ns pushcollider
-  (:require [clojush :exclude (mutate crossover report)] [clojure.contrib.math])
+  (:require [clojush :exclude (mutate crossover report)] [clojure.contrib.math] [clojure.contrib.string :as string])
   (:use [clojush :exclude (mutate crossover report)] [clojure.contrib.math]))
 
 (def succeeded (atom false)) ;; global flag to indicate success
 
-(defrecord individual [genome error totalerror ancestor]) ;; data structure for individuals
+;(def maintain-ancestors true)
+(def stagthreshold 12) ;; Number of times each individual can return unchanged by any operator
+(def max-points 50) ;;max points any program can have
+
+(defrecord ind [genome error totalerror ancestor history]) ;; data structure for individuals
 
 
 (defn report-success
@@ -42,18 +46,31 @@
 
 
 ;List of mutation operators. Add any new mutation operators to this list
-(def mutation-operators (list   'mutate
-                                'crossover
-                                'autopmutate))
+(def mutation-operators (list
+                          '(mutate i1)
+                          '(mutate i2)
+                          '(crossover i1 i2)
+                          '(crossover i2 i1)
+                          '(autopmutate i1)
+                          '(autopmutate i2)
+                          '(autocrossover i1)
+                          '(autocrossover i2)
+                          '(autocrossover1 i1)
+                          '(autocrossover1 i2)
+                          '(autocrossover2 i1 i2)
+                          '(autocrossover2 i2 i1)))
 
 (defn new-individual
   "Returns a new, evaluated individual. "
-  [& {:keys [genome error totalerror ancestor]
-      :or {genome (random-code 50 pushcollider-atom-generators)
+  [& {:keys [genome error totalerror ancestor history]
+      :or {genome (random-code max-points pushcollider-atom-generators)
            error 0
            totalerror 0
-           ancestor ()}}]
-  (individual. genome (evaluate genome) totalerror ancestor))
+           ancestor ()
+           history 0}}]
+  (let [err (evaluate genome)
+        totalerr (+ totalerror err)]
+  (ind. genome err totalerr ancestor history)))
 
 (comment
 (defn pmutate
@@ -63,49 +80,85 @@
         new-genome (insert-code-at-point old-genome 
                      (select-node-index old-genome)
                      (random-code 20 pushcollider-atom-generators))]
-    (if (> (count-points new-genome) 50)
+    (if (> (count-points new-genome) max-points)
       (new-individual
         :genome old-genome
         :ancestor (:ancestor i))
       (new-individual
         :genome new-genome
         :ancestor (cons old-genome (get i :ancestor ()))))))
-      ;;(individual. new-genome (evaluate new-genome) 0 0))))
 )
-
 
   
 (defn autoconstruct
-  [pgm]
-  (top-item :code 
+  "Autoconstruct by pushing item on stack and then running item on a copy
+itself already on the stack"
+  ([pgm] autoconstruct pgm make-push-state)
+  ([pgm state]
+    (top-item :code 
     (run-push pgm 
       (push-item 0 :auxiliary 
         (push-item pgm :code
-          (make-push-state))))))
+          (state)))))))
 
+(defn stagnant
+  "Checks history of individual to make sure individual isnt just being recycled"
+  [i]
+  (if (<= (:history i) stagthreshold) 
+            (new-individual 
+              :genome (get i :genome()) 
+              :error (get i :error()) 
+              :totalerror (get i :totalerror()) 
+              :ancestor (get i :ancestor())
+              :history (inc (get i :history())))
+            (new-individual
+              :genome (random-code max-points pushcollider-atom-generators))))
 
+(defn make-ancestor
+  "Create ancestors for supplied individuals"
+  ([x & more]
+    (if maintain-ancestors
+      (not-lazy (conj x more))
+      ())))
+
+(defn call [^String nm & args]
+  "Allows you to call a function with a string."
+    (when-let [fun (ns-resolve *ns* (symbol nm))]
+        (apply fun args)))
+
+(defn stringtokenizer
+  "Breaks strings into small pieces"
+  [string end]
+  (let [abortion (string/split #" " (str string))
+        yeah (map (fn [x] (symbol x)) (rest abortion))]
+    (if (= end 1)
+      (str (first abortion))
+      (not-lazy (vector yeah)))))
 
 (defn mutate
   "Returns an evaluated individual resulting from the autoconstructive mutation of i."
   [i]
   (let [old-genome (:genome i)
-        randomx (random-code 50 pushcollider-atom-generators)
+        randomx (random-code max-points pushcollider-atom-generators)
         descendant (autoconstruct (:genome i))
         sibling (autoconstruct (:genome i))
         child-error (evaluate descendant)
+        ancestor (make-ancestor (get i :ancestor()) old-genome)
         failed (or (= descendant :no-stack-item)
                  (= descendant sibling)
                  (= descendant old-genome)
+                 (>= child-error (:error i))
                  (>= child-error 20000000)
-                 (> (count-points descendant) 50)
+                 (> (count-points descendant) max-points)
+                 (= (discrepancy old-genome descendant) 0)
+                 (some #{descendant} ancestor)
                  )]
     (if failed
-      (new-individual :genome randomx :error (evaluate randomx) :totalerror 0 :ancestor ())  
+      (new-individual :genome randomx)  
       (new-individual
         :genome descendant
         :error child-error
-        :totalerror (+ child-error (get i :totalerror ()))
-        :ancestor (cons old-genome (get i :ancestor ()))))))
+        :ancestor ancestor))))
        
 
 (defn crossover
@@ -115,14 +168,105 @@ of i1 and i2."
   (let [new-genome (insert-code-at-point (:genome i1) 
                      (select-node-index (:genome i1))
                      (code-at-point (:genome i2)
-                       (select-node-index (:genome i2))))]
-    (if (> (count-points new-genome) 50)
-      i1
+                       (select-node-index (:genome i2))))
+        ancestor (make-ancestor (:ancestor i2) (:ancestor i1) (:genome i2) (:genome i1))]
+    (if (and (> (count-points new-genome) max-points)
+          (some #{new-genome} (not-lazy ancestor)))
+      (stagnant i1)
       (new-individual
         :genome new-genome 
-        :error (evaluate new-genome)
-        :totalerror 0 ;(evaluate new-genome)
-        :ancestor 0))));;(cons (:genome i1) (:genome i2))))))
+        :ancestor ancestor))))
+
+(defn autocrossover
+  "Returns an evaluated individual resulting from the autoconstruction of
+one subtree and the subsequent translocation of that subtree to replace
+another subtree in the same tree."
+  [i]
+  (let [old-genome (:genome i)
+        place1 (select-node-index old-genome)
+        place2 (select-node-index old-genome)
+        stree (code-at-point old-genome place1)
+        descendant (autoconstruct stree)
+        ancestor (make-ancestor (get i :ancestor ()) old-genome)
+        new-genome (insert-code-at-point old-genome place2 descendant)
+        failed (or (= descendant :no-stack-item)
+                 (= place1 place2)
+                 (= descendant stree)
+                 (= descendant (code-at-point old-genome place2))
+                 (>= (evaluate descendant) (evaluate stree))
+                 (>= (evaluate descendant) (evaluate (code-at-point old-genome place2)))
+                 (= (discrepancy descendant stree) 0)
+                 (some #{new-genome} ancestor)
+                 (> (count-points new-genome) max-points)
+                 )] 
+    (if failed
+      (stagnant i)
+      (new-individual
+        :genome new-genome
+        :ancestor ancestor))))
+
+(defn autocrossover1
+  "Same as the mutation operator autocrossover except both subtrees are autoconstructed
+and both subtrees are replaced"
+  [i]
+  (let [old-genome (:genome i)
+        place1 (select-node-index old-genome)
+        place2 (select-node-index old-genome)
+        stree (code-at-point old-genome place1)
+        stree2 (code-at-point old-genome place2)
+        ancestor (make-ancestor (get i :ancestor ()) old-genome)
+        descendant (autoconstruct stree)
+        child2 (autoconstruct stree2)
+        new-genome (insert-code-at-point (insert-code-at-point old-genome place2 descendant) place1 child2)
+        failed (or (= descendant :no-stack-item)
+                 (= place1 place2)
+                 (= descendant stree)
+                 (= child2 stree2)
+                 (= descendant stree2)
+                 (= child2 stree)
+                 (>= (evaluate descendant) (evaluate stree))
+                 (>= (evaluate child2) (evaluate stree2))
+                 (>= (evaluate descendant) (evaluate (code-at-point old-genome place2)))
+                 (>= (evaluate child2) (evaluate (code-at-point old-genome place1)))
+                 (= (discrepancy descendant stree) 0)
+                 (= (discrepancy child2 stree2) 0)
+                 (some #{new-genome} ancestor)
+                 (> (count-points new-genome) max-points)
+                 )] 
+    (if failed
+      (stagnant i)
+      (new-individual
+        :genome new-genome
+        :ancestor ancestor))))
+
+(defn autocrossover2
+  "Same as the mutation operator autocrossover except subtrees are on
+two different trees"
+  [i1 i2]
+  (let [old-genome (:genome i1)
+        old-genome2 (:genome i2)
+        place1 (select-node-index old-genome)
+        place2 (select-node-index old-genome2)
+        stree (code-at-point old-genome place1)
+        descendant (autoconstruct stree)
+        new-genome (insert-code-at-point old-genome2 place2 descendant)
+        ancestor (make-ancestor (:ancestor i2) (:ancestor i1) (:genome i2) (:genome i1))
+        failed (or (= descendant :no-stack-item)
+                 (= place1 place2)
+                 (= descendant stree)
+                 (= descendant (code-at-point old-genome2 place2))
+                 (>= (evaluate descendant) (evaluate stree))
+                 (>= (evaluate descendant) (evaluate (code-at-point old-genome2 place2)))
+                 (= (discrepancy descendant stree) 0)
+                 (some #{new-genome} ancestor)
+                 (> (count-points new-genome) max-points)
+                 )] 
+    (if failed
+      (stagnant i1)
+      (new-individual
+        :genome new-genome
+        :ancestor ancestor))))
+
 
 
 (defn autopmutate
@@ -131,26 +275,66 @@ of i1 and i2."
   (let [old-genome (:genome i)
         place (select-node-index old-genome)
         stree (code-at-point old-genome place)
+        ancestor (make-ancestor (get i :ancestor ()) old-genome)
         descendant (autoconstruct stree)
+        new-genome (insert-code-at-point old-genome place descendant)
         failed (or (= descendant :no-stack-item)
                  (= descendant stree)
                  (>= (evaluate descendant) (evaluate stree))
+                 (= (discrepancy descendant stree) 0)
+                 (some #{new-genome} ancestor)
+                 (> (count-points new-genome) max-points)
                  )]          
     (if failed
-      i
+      (stagnant i)
       (new-individual
-        :genome (insert-code-at-point old-genome place descendant)
-        ;:totalerror (+ child-error (get i :totalerror ()))
-        :ancestor (cons old-genome (get i :ancestor ()))))))
+        :genome new-genome
+        :ancestor ancestor))))
 
 
+(comment
 (defn constructive-collision 
   "Takes a pair of individuals and returns a vector of individuals."
   [[i1 i2]]
   (vector i1 i2 
-    (mutate i1) (mutate i2) 
-    (crossover i1 i2) (crossover i2 i1) 
-    (autopmutate i1) (autopmutate i2)))
+    (mutate i1) (mutate i2)  
+    (autopmutate i1) (autopmutate i2)
+    (crossover i1 i2) (crossover i2 i1)
+    (autocrossover i1) (autocrossover i2)
+    (autocrossover1 i1) (autocrossover1 i2)
+    (autocrossover2 i1 i2) (autocrossover2 i2 i1)))
+)
+
+
+(defn constructive-collision
+  "Takes a pair of individuals and returns a vector of individuals."
+  [[i1 i2]]
+  (let [state (make-push-state)
+        babymaker (for [_ (range 5)]
+                      (for [x (range (count mutation-operators))] ;;[x]] ;;:while (< x (count mutation-operators)) [x]] 
+                        (top-item :integer 
+                          (run-push (:genome 
+                                      (call 
+                                        (stringtokenizer (nth mutation-operators x) 1)
+                                        (stringtokenizer (nth mutation-operators x) 2)))
+                            (push-item x :auxiliary
+                              (push-item (get  
+                                           (call 
+                                             (stringtokenizer (nth mutation-operators x) 1)
+                                             (stringtokenizer (nth mutation-operators x) 2)) :genome ()) :code (state)))))))
+        probability (remove #{:no-stack-item} babymaker)]
+    
+    (push-item i1 :auxiliary state)
+    (push-item i2 :auxiliary state)
+
+    (for [x (range (count mutation-operators))]
+      (push-item (call 
+                   (stringtokenizer (nth mutation-operators x) 1) 
+                   (stringtokenizer (nth mutation-operators x) 2)) :auxiliary state))
+    (if (not= (mod (reduce + probability) 2))
+          (push-item i1 :auxiliary state))
+    (concat (take (reduce + probability) (:auxiliary state)))))
+    
 
 (defn constructive-collisions
   "Splits the population into pairs, collides the pairs constructively
@@ -161,7 +345,7 @@ individuals."
     (apply concat (pmap constructive-collision pairs))))
 
 (defn destructive-collision
-  "Takes a pair of individuals and single individual."
+  "Takes a pair of individuals and returns a single individual."
   [[i1 i2]]
   (if (< (:error i1) (:error i2)) i1 i2))
 
