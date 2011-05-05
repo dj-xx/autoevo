@@ -7,6 +7,7 @@
 ;(def maintain-ancestors true)
 (def stagthreshold 12) ;; Number of times each individual can return unchanged by any operator
 (def max-points 50) ;;max points any program can have
+(def loopy 3)
 
 (defrecord ind [genome error totalerror ancestor history]) ;; data structure for individuals
 
@@ -47,18 +48,12 @@
 
 ;List of mutation operators. Add any new mutation operators to this list
 (def mutation-operators (list
-                          '(mutate i1)
-                          '(mutate i2)
-                          '(crossover i1 i2)
-                          '(crossover i2 i1)
-                          '(autopmutate i1)
-                          '(autopmutate i2)
-                          '(autocrossover i1)
-                          '(autocrossover i2)
-                          '(autocrossover1 i1)
-                          '(autocrossover1 i2)
-                          '(autocrossover2 i1 i2)
-                          '(autocrossover2 i2 i1)))
+                          'mutate
+                          'crossover
+                          'autopmutate
+                          'autocrossover
+                          'autocrossover1
+                          'autocrossover2))
 
 (defn new-individual
   "Returns a new, evaluated individual. "
@@ -72,22 +67,6 @@
         totalerr (+ totalerror err)]
   (ind. genome err totalerr ancestor history)))
 
-(comment
-(defn pmutate
-  "Returns an evaluated individual resulting from the point mutation of i."
-  [i]
-  (let [old-genome (:genome i)        
-        new-genome (insert-code-at-point old-genome 
-                     (select-node-index old-genome)
-                     (random-code 20 pushcollider-atom-generators))]
-    (if (> (count-points new-genome) max-points)
-      (new-individual
-        :genome old-genome
-        :ancestor (:ancestor i))
-      (new-individual
-        :genome new-genome
-        :ancestor (cons old-genome (get i :ancestor ()))))))
-)
 
   
 (defn autoconstruct
@@ -134,6 +113,47 @@ itself already on the stack"
     (if (= end 1)
       (str (first abortion))
       (not-lazy (vector yeah)))))
+
+(defn babymaker
+"Making babies"
+[state i1 i2]
+(let [x (atom 0)]
+(push-item (top-item :integer (run-push (:genome i1) (push-item 0 :auxiliary (push-item (:genome i1) :code (state))))) :hay state)
+(push-item (top-item :integer (run-push (:genome i2) (push-item 0 :auxiliary (push-item (:genome i2) :code (state))))) :hay state)
+
+
+(while (< @x (* (count mutation-operators) 2))
+                        ((push-item (top-item :integer 
+                          (run-push (:genome 
+                                      (call 
+                                        (symbol (str (nth mutation-operators @x)))
+                                        (if (= (count (first (:arglists (meta (resolve (symbol (str (nth mutation-operators @x)))))))) 1)
+                                          (if (= (mod @x 2) 0)
+                                            i1
+                                            i2)
+                                          (if (= (mod @x 2) 0)
+                                            (i1 i2)
+                                            (i2 i1))))
+                            (push-item @x :auxiliary
+                              (push-item (:genome  
+                                           (call 
+                                             (symbol (str (nth mutation-operators x)))
+                                             (if (= (count (first (:arglists (meta (resolve (symbol (str (nth mutation-operators @x)))))))) 1)
+                                               (if (= (mod @x 2) 0)
+                                                 i1
+                                                 i2)
+                                               (if (= (mod @x 2) 0)
+                                                 (i1 i2)
+                                                 (i2 i1))))) 
+                                (:code (state))))))) :hay state))
+(if (= (top-item :hay state) :no-stack-item)
+  ((pop-item :hay state)
+    (push-item @x :hay state)))
+(swap! x inc))
+(if (= (mod (count (:hay state)) 2) 1)
+  (push-item @x :hay state))
+  
+(vector (:hay state))))
 
 (defn mutate
   "Returns an evaluated individual resulting from the autoconstructive mutation of i."
@@ -292,48 +312,58 @@ two different trees"
         :ancestor ancestor))))
 
 
-(comment
-(defn constructive-collision 
-  "Takes a pair of individuals and returns a vector of individuals."
-  [[i1 i2]]
-  (vector i1 i2 
-    (mutate i1) (mutate i2)  
-    (autopmutate i1) (autopmutate i2)
-    (crossover i1 i2) (crossover i2 i1)
-    (autocrossover i1) (autocrossover i2)
-    (autocrossover1 i1) (autocrossover1 i2)
-    (autocrossover2 i1 i2) (autocrossover2 i2 i1)))
-)
-
-
 (defn constructive-collision
   "Takes a pair of individuals and returns a vector of individuals."
   [[i1 i2]]
   (let [state (make-push-state)
-        babymaker (for [_ (range 5)]
-                      (for [x (range (count mutation-operators))] ;;[x]] ;;:while (< x (count mutation-operators)) [x]] 
-                        (top-item :integer 
+        probability (babymaker state i1 i2)
+        probs (map (fn [x] ()) (:hay state)) 
+        x (atom 0)
+        y (atom 0)]
+(assoc state :hay '())
+(push-item (top-item :code (run-push (:genome i1) (push-item 0 :auxiliary (push-item (:genome i1) :code (state))))) :hay state)
+(push-item (top-item :code (run-push (:genome i2) (push-item 0 :auxiliary (push-item (:genome i2) :code (state))))) :hay state)
+
+
+(while (< @x (* (count mutation-operators) 2)) 
+(while (<= @y (nth probs x))
+                        ((push-item (top-item :code
                           (run-push (:genome 
                                       (call 
-                                        (stringtokenizer (nth mutation-operators x) 1)
-                                        (stringtokenizer (nth mutation-operators x) 2)))
-                            (push-item x :auxiliary
-                              (push-item (get  
+                                        (symbol (str (nth mutation-operators @x)))
+                                        (if (= (count (first (:arglists (meta (resolve (symbol (str (nth mutation-operators @x)))))))) 1)
+                                          (if (= (mod @y 2) 0)
+                                            i1
+                                            i2)
+                                          (if (= (mod @y 2) 0)
+                                            (i1 i2)
+                                            (i2 i1))))
+                            (push-item @y :auxiliary
+                              (push-item (:genome  
                                            (call 
-                                             (stringtokenizer (nth mutation-operators x) 1)
-                                             (stringtokenizer (nth mutation-operators x) 2)) :genome ()) :code (state)))))))
-        probability (remove #{:no-stack-item} babymaker)]
-    
-    (push-item i1 :auxiliary state)
-    (push-item i2 :auxiliary state)
-
+                                             (symbol (str (nth mutation-operators x)))
+                                             (if (= (count (first (:arglists (meta (resolve (symbol (str (nth mutation-operators @x)))))))) 1)
+                                               (if (= (mod @y 2) 0)
+                                                 i1
+                                                 i2)
+                                               (if (= (mod @y 2) 0)
+                                                 (i1 i2)
+                                                 (i2 i1))))) 
+                                (:code (state))))))) :hay state))
+(swap! y inc))
+(swap! x inc))
+ 
+(vec (:hay state))))
+        
+ 
+(comment
     (for [x (range (count mutation-operators))]
       (push-item (call 
                    (stringtokenizer (nth mutation-operators x) 1) 
                    (stringtokenizer (nth mutation-operators x) 2)) :auxiliary state))
-    (if (not= (mod (reduce + probability) 2))
+    (if (not= (mod (reduce + (remove #{:no-stack-item} babymaker)) 2))
           (push-item i1 :auxiliary state))
-    (concat (take (reduce + probability) (:auxiliary state)))))
+    (concat (take (reduce + (remove #{:no-stack-item} babymaker)) (:auxiliary state))))
     
 
 (defn constructive-collisions
@@ -346,7 +376,7 @@ individuals."
 
 (defn destructive-collision
   "Takes a pair of individuals and returns a single individual."
-  [[i1 i2]]
+  [i1 i2]
   (if (< (:error i1) (:error i2)) i1 i2))
 
 (defn destructive-collisions
