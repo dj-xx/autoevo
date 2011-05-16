@@ -46,16 +46,6 @@
                                     'integer_sub))
 
 
-;List of mutation operators. Add any new mutation operators to this list
-(def mutation-operators (list
-                          'mutate
-                          'crossover
-                          'autopmutate
-                          'autocrossover
-                          'autocrossover1
-                          'autocrossover2))
-
-
 (defn new-individual
   "Returns a new, evaluated individual. "
   [& {:keys [genome error totalerror ancestor history]
@@ -83,6 +73,8 @@ code stack and then exec'ing it"
 
 
 (defn autoconstruct
+  "Autoconstruct by pushing item on stack and then running item on a copy 
+itself already on the stack"
   [pgm]
   (after-eval pgm :code))
 
@@ -111,12 +103,18 @@ code stack and then exec'ing it"
     (when-let [fun (ns-resolve *ns* (symbol nm))]
         (apply fun args)))
 
+(def caller
+  "Calls function recursively till condition is fulfilled
+Used for generating random # of baies from each operator"
+  (fn [op args y results]
+    (if (= y 0)
+      results
+      #(caller op args (dec y) (conj results (apply op args)))))) 
+
 (defn arrity
   "Find arrity of operators"
   [s]
   (count (first (:arglists (meta (resolve (symbol s)))))))
-
-
 
 (defn mutate
   "Returns an evaluated individual resulting from the autoconstructive mutation of i."
@@ -251,7 +249,6 @@ two different trees"
         :ancestor ancestor))))
 
 
-
 (defn autopmutate
   "Returns an evaluated individual resulting from the autoconstructive point mutation of i."
   [[i]]
@@ -274,75 +271,16 @@ two different trees"
         :genome new-genome
         :ancestor ancestor))))
 
-  
 
 (defn constructive-collision 
   "Takes a pair of individuals and returns a vector of individuals."
   [[i1 i2]]
-  (def mutation-operator (vector
-                          i1
-                          i2
-                          ('mutate i1)
-                          ('mutate i2)
-                          ('crossover i1 i2)
-                          ('crossover i2 i1)
-                          ('autopmutate i1)
-                          ('autopmutate i2)
-                          ('autocrossover i1)
-                          ('autocrossover i2)
-                          ('autocrossover1 i1)
-                          ('autocrossover1 i2)
-                          ('autocrossover2 i1 i2)
-                          ('autocrossover2 i2 i1)))
-  (let [times (mod (:error (rand-nth [i1 i2])) 10)
-        state (make-push-state)
-        ;pos (atom 0)
-        ;probs (map (fn [x] (mod (:error x) 10)) mutation-operator)
-        ]
-;;Loops number of mutation-operators
-;(loop [x 0]
-;(when (< x (count mutation-operator)) 
-  ;;Insert (loop 2)
-;;
-;(loop [y 0
-;       indivs (vector i1 i2)]
-;(when (< y (count mutation-operator))
-
-;;Loops number of times each mutation-operator instance is run 
-;(loop [pos 0]
-;]
-;    (if (< pos times)
-;      results      
-;      (recur (inc pos) (nth prob x) (into (nth mutation-operator x) res)))
-;)
-
-;(recur (inc x))))
-;(print-return (vec (:code state)))
-;(print-return (mapcat (fn [x] (nth mutation-operator x))))
-;(apply (fn [x])
-;(vec (:code state))
-;)
-;;Loops for number of times for a mutator
-;(print-return probs)
-(def foo
-  (fn [y pos res]
-  (if (< pos 0)
-    res
-    #(foo y (dec pos) (conj res (nth mutation-operator y))))))
-
-(def foo1
-  (fn [x results]
-  (if (= (+ x 1) (count mutation-operator))
-    results
-    #(foo1 (inc x) (vec (concat results (trampoline foo (inc x) (int (* (lrand) 10)) results)))))))
-
-(trampoline foo1 -1 (vector))
-))
-
-
-  
-
-    
+  (vec (flatten (vector i1 i2 (caller mutate [i1] (lrand-int 10) []) (caller mutate [i2] (lrand-int 10) [])
+    (caller autopmutate [i1] (lrand-int 10) []) (caller autopmutate [i2] (lrand-int 10) [])
+    (caller crossover [i1 i2] (lrand-int 10) []) (caller crossover [i2 i1] (lrand-int 10) [])
+    (caller autocrossover [i1] (lrand-int 10) []) (caller autocrossover [i2] (lrand-int 10) [])
+    (caller autocrossover1 [i1] (lrand-int 10) []) (caller autocrossover1 [i2] (lrand-int 10) [])
+    (caller autocrossover2 [i1 i2] (lrand-int 10) []) (caller autocrossover2 [i2 i1] (lrand-int 10) [])))))
 
 (defn constructive-collisions
   "Splits the population into pairs, collides the pairs constructively
@@ -392,8 +330,4 @@ the population."
                            (constructive-collisions population))
                          base-pop-size))]
         (recur (inc generation) next-gen)))))
-
-
-  
-      
   
