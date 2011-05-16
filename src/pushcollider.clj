@@ -3,6 +3,13 @@
   (:use [clojush :exclude (mutate crossover report)] [clojure.contrib.math]))
 
 (def succeeded (atom false)) ;; global flag to indicate success
+(def op1 (atom 0)) ;;Counter for mutate operator
+(def op2 (atom 0)) ;;Counter for crossover operator
+(def op3 (atom 0)) ;;Counter for autocrossover operator
+(def op4 (atom 0)) ;;Counter for autocrossover1 operator
+(def op5 (atom 0)) ;;Counter for autocrossover2 operator
+(def op6 (atom 0)) ;;Counter for autopmutate operator
+
 
 ;(def maintain-ancestors true)
 (def stagthreshold 12) ;; Number of times each individual can return unchanged by any operator
@@ -134,6 +141,7 @@ itself already on the stack"
                  (= (discrepancy old-genome descendant) 0)
                  (some #{descendant} ancestor)
                  )]
+    (swap! op1 inc) ;;Increment each time operator is called
     (if failed
       (new-individual :genome randomx)  
       (new-individual
@@ -151,6 +159,7 @@ of i1 and i2."
                      (code-at-point (:genome i2)
                        (select-node-index (:genome i2))))
         ancestor (make-ancestor (:ancestor i2) (:ancestor i1) (:genome i2) (:genome i1))]
+    (swap! op2 inc) ;;Increment each time operator is called
     (if (and (> (count-points new-genome) max-points)
           (some #{new-genome} (not-lazy ancestor)))
       (stagnant i1)
@@ -180,6 +189,7 @@ another subtree in the same tree."
                  (some #{new-genome} ancestor)
                  (> (count-points new-genome) max-points)
                  )] 
+    (swap! op3 inc) ;;Increment each time operator is called
     (if failed
       (stagnant i)
       (new-individual
@@ -214,6 +224,7 @@ and both subtrees are replaced"
                  (some #{new-genome} ancestor)
                  (> (count-points new-genome) max-points)
                  )] 
+    (swap! op4 inc) ;;Increment each time operator is called
     (if failed
       (stagnant i)
       (new-individual
@@ -242,6 +253,7 @@ two different trees"
                  (some #{new-genome} ancestor)
                  (> (count-points new-genome) max-points)
                  )] 
+    (swap! op5 inc);;Increment each time operator is called
     (if failed
       (stagnant i1)
       (new-individual
@@ -264,7 +276,8 @@ two different trees"
                  (= (discrepancy descendant stree) 0)
                  (some #{new-genome} ancestor)
                  (> (count-points new-genome) max-points)
-                 )]          
+                 )]  
+    (swap! op6 inc) ;;Increment each time operator is called
     (if failed
       (stagnant i)
       (new-individual
