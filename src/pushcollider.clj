@@ -103,9 +103,9 @@ itself already on the stack"
     (when-let [fun (ns-resolve *ns* (symbol nm))]
         (apply fun args)))
 
+;Calls function recursively till condition is fulfilled
+;Used for generating random # of baies from each operator
 (def caller
-  "Calls function recursively till condition is fulfilled
-Used for generating random # of baies from each operator"
   (fn [op args y results]
     (if (= y 0)
       results
